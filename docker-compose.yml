@@ -1,0 +1,171 @@
+version: '2'
+
+services:
+
+### Applications Code Container #############################
+
+    applications:
+        image: tianon/true
+        volumes:
+            - ../test-api:/var/www/public/test-api
+            - ../customer-service:/var/www/public/customer-service
+
+### Workspace Utilities Container ###########################
+
+    workspace:
+        build:
+            context: ./workspace
+            args:
+                - INSTALL_XDEBUG=false
+                - INSTALL_SOAP=false
+                - INSTALL_MONGO=false
+                - INSTALL_NODE=false
+                - INSTALL_YARN=false
+                - INSTALL_DRUSH=false
+                - INSTALL_AEROSPIKE_EXTENSION=false
+                - INSTALL_V8JS_EXTENSION=false
+                - COMPOSER_GLOBAL_INSTALL=false
+                - INSTALL_WORKSPACE_SSH=false
+                - INSTALL_LARAVEL_ENVOY=false
+                - INSTALL_DEPLOYER=false
+                - INSTALL_LINUXBREW=false
+                - INSTALL_MC=false
+                - PUID=1000
+                - PGID=1000
+                - NODE_VERSION=stable
+                - YARN_VERSION=latest
+                - TZ=UTC
+        volumes_from:
+            - applications
+        extra_hosts:
+            # IMPORTANT: Replace with your Docker Host IP (will be appended to /etc/hosts)
+            - "dockerhost:192.168.99.100"
+        ports:
+           - "2222:22"
+        tty: true
+
+### PHP-FPM Container #######################################
+
+    php-fpm:
+        build:
+            context: ./php-fpm
+            args:
+                - INSTALL_XDEBUG=false
+                - INSTALL_BLACKFIRE=false
+                - INSTALL_SOAP=true
+                - INSTALL_MONGO=false
+                - INSTALL_MSSQL=false
+                - INSTALL_ZIP_ARCHIVE=true
+                - INSTALL_BCMATH=true
+                - INSTALL_PHPREDIS=true
+                - INSTALL_MEMCACHED=false
+                - INSTALL_OPCACHE=false
+                - INSTALL_EXIF=true
+                - INSTALL_AEROSPIKE=false
+                - INSTALL_MYSQLI=false
+                - INSTALL_TOKENIZER=false
+                - INSTALL_INTL=true
+                - INSTALL_GHOSTSCRIPT=false
+                - INSTALL_LDAP=false
+                - INSTALL_SWOOLE=false
+                - INSTALL_COMPOSER=true
+                - INSTALL_GIT=true
+            dockerfile: Dockerfile-70
+        volumes_from:
+            - applications
+        expose:
+            - "9000"
+        links:
+            - workspace
+            - apache2-b:staging.test.demo.com
+        extra_hosts:
+            # IMPORTANT: Replace with your Docker Host IP (will be appended to /etc/hosts)
+            - "dockerhost:192.168.99.100"
+        environment:
+            # IMPORTANT: Set the Remote Interpreter entry matching name to `laravel`
+            - PHP_IDE_CONFIG=serverName=laravel
+            - CAKE_ENV=staging
+            - APP_ENV=local
+            - DB_HOST=mysql-b
+            - DB_CONNECTION=console
+            - DB_PORT=3306
+            - DB_DATABASE=console
+            - DB_USERNAME=root
+            - DB_PASSWORD=mypass
+
+### Apache Server Container #################################
+
+    apache2-b:
+        build:
+            context: ./apache2-b
+            args:
+                - PHP_SOCKET=php-fpm:9000
+        volumes_from:
+            - applications
+        volumes:
+            - ./logs/apache2:/var/log/apache2
+        ports:
+            - "8080:80"
+            - "443:443"
+        #links:
+        #    - php-fpm:internal.services.demo.com
+
+### HHVM Container ##########################################
+
+    hhvm:
+        build: ./hhvm
+        volumes_from:
+            - applications
+        expose:
+            - "9000"
+        links:
+            - workspace
+
+### RabbitMQ Container ######################################
+
+    rabbitmq:
+        build: ./rabbitmq
+        ports:
+            - "5672:5672"
+            - "15671:15671"
+            - "8081:15672"
+        privileged: true
+        environment:
+            RABBITMQ_DEFAULT_USER: guest
+            RABBITMQ_DEFAULT_PASS: guest
+        links:
+            - php-fpm
+
+### Redis Container #########################################
+
+    redis:
+        build: ./redis
+        volumes:
+            - redis:/data
+        ports:
+            - "6379:6379"
+
+### MySQL Container #########################################
+
+    mysql-b:
+        build:
+            context: ./mysql-b
+        environment:
+            # - MYSQL_DATABASE=deafult
+            # - MYSQL_USER=deafult
+            # - MYSQL_PASSWORD=secret
+            - MYSQL_ROOT_PASSWORD=mypass
+        volumes:
+            - ./mysql-b/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+        ports:
+            - "3308:3306"
+
+### Volumes Setup ###########################################
+
+volumes:
+    mysql-b:
+        driver: "local"
+    sessions:    ## nothing is connected to this (- ./data/sessions:/sessions)
+        driver: "local"
+    redis:
+        driver: "local"
